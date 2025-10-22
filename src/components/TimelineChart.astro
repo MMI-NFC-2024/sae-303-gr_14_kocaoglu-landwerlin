@@ -3,7 +3,7 @@
 
 <div class="bg-white rounded-2xl shadow-xl p-6 border border-slate-200">
   <div class="mb-4">
-    <h3 class="text-xl font-semibold text-slate-800 mb-2">Évolution Rail vs Tourisme</h3>
+    <h3 class="text-xl font-semibold text-slate-800 mb-2">Évolution Rail vs Tourisme (2015-2024)</h3>
     <label class="block text-sm text-slate-600 mb-2">
       Choisir un département
       <select id="dept-select" class="ml-2 px-3 py-2 border border-slate-300 rounded-lg">
@@ -12,6 +12,21 @@
     </label>
   </div>
   <div id="timeline-container"></div>
+  <div class="mt-4 flex gap-4 text-sm">
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-purple-600 rounded"></div>
+      <span class="text-slate-600">Fréquentation gares (voyageurs/an)</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-orange-500 rounded"></div>
+      <span class="text-slate-600">Nuitées touristiques</span>
+    </div>
+  </div>
+  <div class="mt-3 bg-blue-50 p-3 rounded-lg">
+    <p class="text-sm text-slate-700">
+      💡 <strong>Lecture :</strong> Les deux courbes en valeurs absolues pour comparer les volumes.
+    </p>
+  </div>
 </div>
 
 <script>
@@ -19,6 +34,14 @@
   import * as Plot from '@observablehq/plot';
 
   let currentData: any = null;
+
+  function deptFromCP(cp: string | null): string | null {
+    if (!cp) return null;
+    const s = String(cp).padStart(5, '0');
+    if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+    if (s.startsWith('20')) return null;
+    return s.slice(0, 2);
+  }
 
   async function loadData() {
     if (currentData) return currentData;
@@ -30,35 +53,28 @@
       fetch('/data/frequentation-gares.json').then(r => r.json())
     ]);
 
+    // Debug: afficher la structure du premier élément
+    console.log('Structure nuiteesDep:', nuiteesDep[0]);
+
     currentData = { deptsGeo, nuiteesDep, popDep, freq };
     return currentData;
   }
 
   function processData(data: any) {
-    const { deptsGeo, nuiteesDep, popDep, freq } = data;
+    const { deptsGeo, nuiteesDep } = data;
 
-    const nomToCodeDep = new Map(
-      deptsGeo.features.map((f: any) => [
-        (f.properties.nom || f.properties.NOM).toLowerCase(),
-        String(f.properties.code || f.properties.CODE_DEPT)
-      ])
-    );
+    // Debug: voir toutes les clés possibles
+    const sampleKeys = nuiteesDep[0] ? Object.keys(nuiteesDep[0]) : [];
+    console.log('Clés disponibles dans nuiteesDep:', sampleKeys);
 
-    const popByDep = new Map(
-      popDep
-        .map((d: any) => [nomToCodeDep.get(d["Géographie"].toLowerCase()), +d["Valeur"]])
-        .filter(([code, val]: any) => code && !isNaN(val))
-    );
-
-    const nuiteesByDep = d3.rollup(
+    // Agrégation par département et année
+    const nuiteesByDepAndYear = d3.rollup(
       nuiteesDep,
-      (v: any) => {
-        const total = d3.sum(v, (d: any) => 
-          (+d.hotel_nuitees || 0) + (+d.camping_nuitees || 0) + (+d.autres_nuitees || 0)
-        );
-        return total;
-      },
-      (d: any) => String(d.code_departement)
+      (v: any) => d3.sum(v, (d: any) => 
+        +(d.hotel_nuitees || 0) + +(d.camping_nuitees || 0) + +(d.autres_nuitees || 0)
+      ),
+      (d: any) => String(d.code_departement),
+      (d: any) => +d.year
     );
 
     const depNameByCode = new Map(
@@ -73,7 +89,7 @@
         ])
     );
 
-    const depOptions = Array.from(nuiteesByDep.keys())
+    const depOptions = Array.from(nuiteesByDepAndYear.keys())
       .filter(code => !/^(97|98|M|F)/.test(code))
       .map(code => ({
         label: `${depNameByCode.get(code) || code} (${code})`,
@@ -81,14 +97,7 @@
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
-    return { freq, nuiteesByDep, depOptions };
-  }
-
-  function deptFromCP(cp: string) {
-    const s = String(cp).padStart(5, '0');
-    if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
-    if (s.startsWith('20')) return null;
-    return s.slice(0, 2);
+    return { nuiteesByDepAndYear, depOptions };
   }
 
   function yearKey(row: any, y: number) {
@@ -104,55 +113,113 @@
 
   async function renderTimeline(depCode: string) {
     const data = await loadData();
-    const { freq, nuiteesByDep } = processData(data);
+    const { freq } = data;
+    const { nuiteesByDepAndYear } = processData(data);
 
     const years = d3.range(2015, 2025);
 
-    const serieRail = years.map(y => ({
+    // Données rail brutes
+    const railData = years.map(y => ({
       year: y,
       value: d3.sum(freq, (r: any) =>
         deptFromCP(r.code_postal) === depCode ? +yearKey(r, y) : 0
-      ),
+      )
+    }));
+
+    // Données tourisme brutes
+    const tourismeData = years.map(y => {
+      const val = nuiteesByDepAndYear.get(depCode)?.get(y) || 0;
+      return { year: y, value: val };
+    });
+    
+
+    const serieRail = railData.map(d => ({
+      year: d.year,
+      value: d.value,
       type: 'Fréquentation gares'
     }));
 
-    const totalNuitees = nuiteesByDep.get(depCode) || 0;
-    const serieTourisme = years.map(y => ({
-      year: y,
-      value: totalNuitees,
-      type: 'Nuitées (référence)'
+    const serieTourisme = tourismeData.map(d => ({
+      year: d.year,
+      value: d.value,
+      type: 'Nuitées touristiques'
     }));
+
+    // Trouver le max pour l'échelle
+    const maxRail = d3.max(serieRail, d => d.value) || 0;
+    const maxTourisme = d3.max(serieTourisme, d => d.value) || 0;
+    const maxY = Math.max(maxRail, maxTourisme) * 1.15;
 
     const plot = Plot.plot({
       width: 600,
       height: 360,
       marginLeft: 100,
-      y: { label: 'Volume (échelle brute)' },
-      x: { label: 'Années' },
-      color: { legend: true },
+      y: { 
+        label: 'Volume',
+        grid: true,
+        tickFormat: d => d3.format('.2s')(d),
+        domain: [0, maxY]
+      },
+      x: { 
+        label: 'Années',
+        domain: [2015, 2024]
+      },
+      color: { 
+        legend: true,
+        domain: ['Fréquentation gares', 'Nuitées touristiques'],
+        range: ['#8b5cf6', '#fb923c']
+      },
       marks: [
+        // Zone COVID
+        Plot.rect([{ x1: 2020, x2: 2021 }], {
+          x1: 'x1',
+          x2: 'x2',
+          y1: 0,
+          y2: maxY,
+          fill: '#fecaca',
+          opacity: 0.1
+        }),
+        
+        // Ligne Rail
         Plot.line(serieRail, {
           x: 'year',
           y: 'value',
           stroke: '#8b5cf6',
           strokeWidth: 3,
+          curve: 'catmull-rom',
           tip: true,
-          title: (d: any) => `Voyageurs ${d.year} : ${d.value.toLocaleString()}`
+          title: (d: any) => `Voyageurs ${d.year}: ${d.value.toLocaleString()}`
         }),
+        
+        // Ligne Tourisme
         Plot.line(serieTourisme, {
           x: 'year',
           y: 'value',
           stroke: '#fb923c',
-          strokeWidth: 2,
-          strokeDasharray: '5,5',
-          opacity: 0.7,
-          title: (d: any) => `Nuitées (réf) ${d.year} : ${d.value.toLocaleString()}`
+          strokeWidth: 3,
+          curve: 'catmull-rom',
+          tip: true,
+          title: (d: any) => `Nuitées ${d.year}: ${d.value.toLocaleString()}`
         }),
+        
+        // Points Rail
         Plot.dot(serieRail, {
           x: 'year',
           y: 'value',
           fill: '#8b5cf6',
-          r: 4
+          r: 4,
+          stroke: 'white',
+          strokeWidth: 2
+        }),
+        
+        // Points Tourisme
+        Plot.dot(serieTourisme, {
+          x: 'year',
+          y: 'value',
+          fill: '#fb923c',
+          r: 4,
+          stroke: 'white',
+          strokeWidth: 2
         })
       ]
     });
