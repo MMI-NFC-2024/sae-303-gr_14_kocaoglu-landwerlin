@@ -1,0 +1,190 @@
+---
+---
+
+<div class="bg-white rounded-2xl shadow-xl p-6 border border-slate-200">
+  <div class="mb-4">
+    <h3 class="text-xl font-semibold text-slate-800 mb-2">Évolution Rail vs Tourisme</h3>
+    <label class="block text-sm text-slate-600 mb-2">
+      Choisir un département
+      <select id="dept-select" class="ml-2 px-3 py-2 border border-slate-300 rounded-lg">
+        <option value="">Chargement...</option>
+      </select>
+    </label>
+  </div>
+  <div id="timeline-container"></div>
+</div>
+
+<script>
+  import * as d3 from 'd3';
+  import * as Plot from '@observablehq/plot';
+
+  let currentData: any = null;
+
+  async function loadData() {
+    if (currentData) return currentData;
+    
+    const [deptsGeo, nuiteesDep, popDep, freq] = await Promise.all([
+      fetch('/data/departements.geojson').then(r => r.json()),
+      fetch('/data/NUITEES_PAR_DEP.json').then(r => r.json()),
+      fetch('/data/popraw.json').then(r => r.json()),
+      fetch('/data/frequentation-gares.json').then(r => r.json())
+    ]);
+
+    currentData = { deptsGeo, nuiteesDep, popDep, freq };
+    return currentData;
+  }
+
+  function processData(data: any) {
+    const { deptsGeo, nuiteesDep, popDep, freq } = data;
+
+    const nomToCodeDep = new Map(
+      deptsGeo.features.map((f: any) => [
+        (f.properties.nom || f.properties.NOM).toLowerCase(),
+        String(f.properties.code || f.properties.CODE_DEPT)
+      ])
+    );
+
+    const popByDep = new Map(
+      popDep
+        .map((d: any) => [nomToCodeDep.get(d["Géographie"].toLowerCase()), +d["Valeur"]])
+        .filter(([code, val]: any) => code && !isNaN(val))
+    );
+
+    const nuiteesByDep = d3.rollup(
+      nuiteesDep,
+      (v: any) => {
+        const total = d3.sum(v, (d: any) => 
+          (+d.hotel_nuitees || 0) + (+d.camping_nuitees || 0) + (+d.autres_nuitees || 0)
+        );
+        return total;
+      },
+      (d: any) => String(d.code_departement)
+    );
+
+    const depNameByCode = new Map(
+      deptsGeo.features
+        .filter((f: any) => {
+          const code = String(f.properties.code || f.properties.CODE_DEPT);
+          return !/^(97|98)/.test(code);
+        })
+        .map((f: any) => [
+          String(f.properties.code || f.properties.CODE_DEPT),
+          String(f.properties.nom || f.properties.NOM)
+        ])
+    );
+
+    const depOptions = Array.from(nuiteesByDep.keys())
+      .filter(code => !/^(97|98|M|F)/.test(code))
+      .map(code => ({
+        label: `${depNameByCode.get(code) || code} (${code})`,
+        value: code
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return { freq, nuiteesByDep, depOptions };
+  }
+
+  function deptFromCP(cp: string) {
+    const s = String(cp).padStart(5, '0');
+    if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+    if (s.startsWith('20')) return null;
+    return s.slice(0, 2);
+  }
+
+  function yearKey(row: any, y: number) {
+    return (
+      row?.[`total_voyageurs_${y}`] ??
+      row?.[`totalvoyageurs${y}`] ??
+      row?.[`voyageurs_${y}`] ??
+      row?.[`trafic_${y}`] ??
+      row?.[`${y}`] ??
+      0
+    );
+  }
+
+  async function renderTimeline(depCode: string) {
+    const data = await loadData();
+    const { freq, nuiteesByDep } = processData(data);
+
+    const years = d3.range(2015, 2025);
+
+    const serieRail = years.map(y => ({
+      year: y,
+      value: d3.sum(freq, (r: any) =>
+        deptFromCP(r.code_postal) === depCode ? +yearKey(r, y) : 0
+      ),
+      type: 'Fréquentation gares'
+    }));
+
+    const totalNuitees = nuiteesByDep.get(depCode) || 0;
+    const serieTourisme = years.map(y => ({
+      year: y,
+      value: totalNuitees,
+      type: 'Nuitées (référence)'
+    }));
+
+    const plot = Plot.plot({
+      width: 600,
+      height: 360,
+      marginLeft: 100,
+      y: { label: 'Volume (échelle brute)' },
+      x: { label: 'Années' },
+      color: { legend: true },
+      marks: [
+        Plot.line(serieRail, {
+          x: 'year',
+          y: 'value',
+          stroke: '#8b5cf6',
+          strokeWidth: 3,
+          tip: true,
+          title: (d: any) => `Voyageurs ${d.year} : ${d.value.toLocaleString()}`
+        }),
+        Plot.line(serieTourisme, {
+          x: 'year',
+          y: 'value',
+          stroke: '#fb923c',
+          strokeWidth: 2,
+          strokeDasharray: '5,5',
+          opacity: 0.7,
+          title: (d: any) => `Nuitées (réf) ${d.year} : ${d.value.toLocaleString()}`
+        }),
+        Plot.dot(serieRail, {
+          x: 'year',
+          y: 'value',
+          fill: '#8b5cf6',
+          r: 4
+        })
+      ]
+    });
+
+    const container = document.getElementById('timeline-container');
+    if (container) {
+      container.innerHTML = '';
+      container.appendChild(plot);
+    }
+  }
+
+  async function init() {
+    const data = await loadData();
+    const { depOptions } = processData(data);
+
+    const select = document.getElementById('dept-select') as HTMLSelectElement;
+    if (select) {
+      select.innerHTML = depOptions
+        .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+        .join('');
+
+      select.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        renderTimeline(target.value);
+      });
+
+      // Initial render
+      if (depOptions.length > 0) {
+        renderTimeline(depOptions[0].value);
+      }
+    }
+  }
+
+  init();
+</script>

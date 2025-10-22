@@ -1,0 +1,97 @@
+---
+---
+
+<div class="max-w-4xl mx-auto">
+  <h2 class="text-4xl font-bold mb-8 text-slate-900 text-center">
+    ⚙️ Méthodologie de l'indice IATR
+  </h2>
+  
+  <div class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
+    <p class="text-lg text-slate-700 mb-6 leading-relaxed">
+      L'IATR (Indice d'Accessibilité Touristique par le Rail) évalue la capacité d'un territoire à être desservi par le train <strong>en lien avec son attractivité touristique</strong>.
+    </p>
+
+    <div class="bg-blue-50 rounded-xl p-6 mb-6">
+      <h3 class="text-xl font-semibold text-blue-900 mb-4">Composantes de l'indice (0-100)</h3>
+      
+      <div class="space-y-4">
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
+            25%
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-slate-800 mb-1">Densité de gares (par km²)</h4>
+            <p class="text-sm text-slate-600">Mesure la maille ferroviaire du territoire</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
+            25%
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-slate-800 mb-1">Gares / 100 000 hab</h4>
+            <p class="text-sm text-slate-600">Accessibilité pour la population locale</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">
+            30%
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-slate-800 mb-1">Intensité rail (voyageurs/an / 100k hab)</h4>
+            <p class="text-sm text-slate-600">Usage réel du réseau ferroviaire</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-400 text-white rounded-lg flex items-center justify-center font-bold">
+            20%
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-slate-800 mb-1">Couverture touristique</h4>
+            <p class="text-sm text-slate-600">% de lits ≤ 5 km d'une gare (approx.)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-slate-50 rounded-xl p-6 mb-6">
+      <h3 class="text-lg font-semibold text-slate-800 mb-3">🔄 Processus de calcul</h3>
+      <ol class="space-y-2 text-sm text-slate-700">
+        <li><strong>1.</strong> Normalisation de chaque composante (min-max) sur 0-100</li>
+        <li><strong>2.</strong> Agrégation selon les pondérations ci-dessus</li>
+        <li><strong>3.</strong> Recalibrage global pour étendre l'IATR sur 0-100</li>
+      </ol>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="bg-green-50 border-2 border-green-300 rounded-lg p-4 text-center">
+        <div class="text-2xl mb-2">🟢</div>
+        <div class="font-semibold text-green-800">IATR ≥ 66</div>
+        <div class="text-sm text-green-700">Bien desservi</div>
+      </div>
+      <div class="bg-orange-50 border-2 border-orange-300 rounded-lg p-4 text-center">
+        <div class="text-2xl mb-2">🟠</div>
+        <div class="font-semibold text-orange-800">33-66</div>
+        <div class="text-sm text-orange-700">Opportunité</div>
+      </div>
+      <div class="bg-red-50 border-2 border-red-300 rounded-lg p-4 text-center">
+        <div class="text-2xl mb-2">🔴</div>
+        <div class="font-semibold text-red-800">IATR < 33</div>
+        <div class="text-sm text-red-700">Sous-desservi</div>
+      </div>
+    </div>
+
+    <div class="mt-6 pt-6 border-t border-slate-200">
+      <h3 class="text-lg font-semibold text-slate-800 mb-3">📚 Sources des données</h3>
+      <ul class="text-sm text-slate-600 space-y-2">
+        <li><strong>Tourisme :</strong> INSEE / Atout France — Nuitées par département (2023)</li>
+        <li><strong>Population :</strong> INSEE — Recensement 2021</li>
+        <li><strong>Rail :</strong> SNCF Open Data — Gares et fréquentation (2015-2024)</li>
+        <li><strong>Géographie :</strong> IGN / Géoportail — Contours départements (GeoJSON)</li>
+      </ul>
+    </div>
+  </div>
+</div>

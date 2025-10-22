@@ -1,0 +1,144 @@
+---
+---
+
+<div class="bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
+  <h3 class="text-2xl font-semibold text-white mb-6">Calculez votre impact</h3>
+  
+  <div class="space-y-6 mb-8">
+    <div>
+      <label class="block text-sm font-medium text-slate-300 mb-2">
+        Distance aller (km)
+      </label>
+      <select id="distance-select" class="w-full px-4 py-3 bg-slate-700 text-white border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <option value="200">200 km (Paris → Le Mans)</option>
+        <option value="400" selected>400 km (Paris → Bordeaux)</option>
+        <option value="700">700 km (Paris → Marseille)</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-300 mb-2">
+        Nombre de personnes
+      </label>
+      <input 
+        type="range" 
+        id="pax-slider" 
+        min="1" 
+        max="4" 
+        value="1" 
+        class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+      />
+      <div class="flex justify-between text-xs text-slate-400 mt-1">
+        <span>1</span>
+        <span id="pax-value" class="text-lg font-semibold text-blue-400">1 personne</span>
+        <span>4</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="result-container" class="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
+    <!-- Results will be injected here -->
+  </div>
+</div>
+
+<script>
+  const CO2 = {
+    car_kg_km: 0.192,
+    train_kg_km: 0.014
+  };
+
+  function updateResults() {
+    const distanceSelect = document.getElementById('distance-select') as HTMLSelectElement;
+    const paxSlider = document.getElementById('pax-slider') as HTMLInputElement;
+    const resultContainer = document.getElementById('result-container');
+    const paxValue = document.getElementById('pax-value');
+
+    if (!distanceSelect || !paxSlider || !resultContainer || !paxValue) return;
+
+    const d = parseInt(distanceSelect.value);
+    const p = parseInt(paxSlider.value);
+    const kmAR = d * 2;
+
+    paxValue.textContent = p === 1 ? '1 personne' : `${p} personnes`;
+
+    const car = CO2.car_kg_km * kmAR;
+    const train = CO2.train_kg_km * kmAR;
+    const carPer = car / p;
+    const trainPer = train / p;
+    const saved = car - train;
+    const savedPer = carPer - trainPer;
+
+    resultContainer.innerHTML = `
+      <h4 class="text-xl font-semibold text-blue-300 mb-4 text-center">
+        🌍 Bilan CO₂ — Aller / Retour de ${kmAR} km
+      </h4>
+      <ul class="space-y-3">
+        <li class="flex justify-between items-center py-2">
+          <span class="text-slate-300">
+            🚗 <strong>Voiture</strong>
+          </span>
+          <span class="text-red-400 font-semibold text-lg">
+            ${car.toFixed(1)} kg CO₂
+            ${p > 1 ? `<span class="text-sm opacity-75">(≈ ${carPer.toFixed(1)} / pers)</span>` : ''}
+          </span>
+        </li>
+        <li class="flex justify-between items-center py-2">
+          <span class="text-slate-300">
+            🚆 <strong>Train</strong>
+          </span>
+          <span class="text-green-400 font-semibold text-lg">
+            ${train.toFixed(1)} kg CO₂
+            ${p > 1 ? `<span class="text-sm opacity-75">(≈ ${trainPer.toFixed(1)} / pers)</span>` : ''}
+          </span>
+        </li>
+        <li class="flex justify-between items-center py-3 border-t border-slate-700 mt-2">
+          <span class="text-white font-semibold">
+            💨 <strong>CO₂ évité</strong>
+          </span>
+          <span class="text-blue-400 font-bold text-xl">
+            ${saved.toFixed(1)} kg
+            ${p > 1 ? `<span class="text-base opacity-75">(≈ ${savedPer.toFixed(1)} / pers)</span>` : ''}
+          </span>
+        </li>
+      </ul>
+      <p class="text-xs text-slate-400 text-center mt-6 opacity-75">
+        Basé sur les facteurs moyens ADEME : 0.192 kg CO₂/km (voiture) · 0.014 kg CO₂/km (train)
+      </p>
+    `;
+  }
+
+  // Initialize
+  updateResults();
+
+  // Event listeners
+  const distanceSelect = document.getElementById('distance-select');
+  const paxSlider = document.getElementById('pax-slider');
+
+  if (distanceSelect) {
+    distanceSelect.addEventListener('change', updateResults);
+  }
+
+  if (paxSlider) {
+    paxSlider.addEventListener('input', updateResults);
+  }
+</script>
+
+<style>
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #60a5fa;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #60a5fa;
+    cursor: pointer;
+    border: none;
+  }
+</style>

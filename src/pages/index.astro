@@ -1,21 +1,168 @@
 ---
-import PlotFigure from "../components/PlotFigure.astro";
-import Layout from "../layouts/Layout.astro";
-import * as Plot from "@observablehq/plot";
-import penguins from "../assets/penguins.json";
+import Layout from '../layouts/Layout.astro';
+import Hero from '../components/Hero.astro';
+import MapVisualization from '../components/MapVisualization.astro';
+import BarChart from '../components/BarChart.astro';
+import TimelineChart from '../components/TimelineChart.astro';
+import CO2Simulator from '../components/CO2Simulator.astro';
+import Methodology from '../components/Methodology.astro';
+import Conclusion from '../components/Conclusion.astro';
 ---
 
-<Layout>
-  <h1 class="text-2xl">Test Astro et Plot (Observablehq)</h1>
-  <PlotFigure
-    options={{
-      marks: [
-        Plot.dot(penguins, {
-          x: "culmen_length_mm",
-          y: "culmen_depth_mm",
-          stroke: "species",
-        }),
-      ],
-    }}
-  />
+<Layout title="Tourisme en Train - SAE 303">
+  <Hero />
+  
+  <!-- Section 1: Carte - Texte à gauche -->
+  <section id="carte" class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div class="order-2 lg:order-1">
+          <h2 class="text-4xl font-bold mb-6 text-slate-900">
+            🗺️ Diagnostic spatial
+          </h2>
+          <div class="prose prose-lg text-slate-600">
+            <p>
+              Cette carte combine deux dimensions : le <strong>fond choroplèthe</strong> montre l'intensité touristique (nuitées / 1000 habitants), et les <strong>points colorés</strong> représentent le niveau de desserte ferroviaire (indice IATR).
+            </p>
+            <p>
+              Chaque point correspond à une gare ; sa taille indique la performance du département en matière de rail, et sa couleur montre la classe de desserte.
+            </p>
+            <div class="bg-blue-50 p-4 rounded-lg my-4">
+              <h3 class="text-lg font-semibold text-blue-900 mb-2">💡 Interprétation</h3>
+              <ul class="text-sm space-y-2">
+                <li>Les zones littorales et alpines affichent une forte intensité touristique mais un maillage ferroviaire limité</li>
+                <li>Les métropoles et axes historiques ressortent comme "train-friendly"</li>
+                <li>Certains territoires ruraux très touristiques révèlent un potentiel de report modal important</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="order-1 lg:order-2">
+          <MapVisualization />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: Classement - Texte à droite -->
+  <section id="classement" class="py-20 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div class="order-1">
+          <BarChart />
+        </div>
+        <div class="order-2">
+          <h2 class="text-4xl font-bold mb-6 text-slate-900">
+            🧮 Classement comparatif
+          </h2>
+          <div class="prose prose-lg text-slate-600">
+            <p>
+              Ce graphique classe les départements selon leur <strong>intensité touristique</strong> (nuitées / 1000 hab). Chaque barre bleue représente la force touristique, et le point coloré indique leur IATR.
+            </p>
+            <p>
+              L'objectif : repérer les départements très touristiques dont l'IATR est faible, signalant un <strong>gap d'accessibilité ferroviaire</strong>.
+            </p>
+            <div class="bg-orange-50 p-4 rounded-lg my-4">
+              <h3 class="text-lg font-semibold text-orange-900 mb-2">📊 Lecture</h3>
+              <ul class="text-sm space-y-2">
+                <li>Les départements côtiers figurent parmi les plus touristiques avec un IATR modéré</li>
+                <li>Certaines régions urbaines combinent tourisme et forte accessibilité</li>
+                <li>Permet de cibler les territoires à potentiel ferroviaire</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Évolution - Texte à gauche -->
+  <section id="evolution" class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div class="order-2 lg:order-1">
+          <h2 class="text-4xl font-bold mb-6 text-slate-900">
+            📈 Évolution 2015 → 2024
+          </h2>
+          <div class="prose prose-lg text-slate-600">
+            <p>
+              Ce graphique compare la <strong>fréquentation annuelle des gares (2015-2024)</strong> et le niveau touristique pour un département sélectionné.
+            </p>
+            <p>
+              Il met en évidence si la fréquentation ferroviaire suit la tendance du tourisme.
+            </p>
+            <div class="bg-purple-50 p-4 rounded-lg my-4">
+              <h3 class="text-lg font-semibold text-purple-900 mb-2">🧩 Interprétation</h3>
+              <ul class="text-sm space-y-2">
+                <li>Croissance parallèle jusqu'en 2019, suivie d'une chute COVID</li>
+                <li>Le rail retrouve son niveau pré-crise plus vite que le tourisme</li>
+                <li>Dans certains départements ruraux, stagnation du trafic ferroviaire</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="order-1 lg:order-2">
+          <TimelineChart />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: Simulateur CO2 - Texte à droite -->
+  <section id="co2" class="py-20 bg-slate-900 text-white">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div class="order-1">
+          <CO2Simulator />
+        </div>
+        <div class="order-2">
+          <h2 class="text-4xl font-bold mb-6">
+            🌍 Simulateur CO₂
+          </h2>
+          <div class="prose prose-lg text-slate-300">
+            <p>
+              Ce simulateur illustre concrètement le <strong>gain environnemental</strong> du train pour un week-end (aller-retour).
+            </p>
+            <p>
+              Choisissez la distance et le nombre de voyageurs pour voir les émissions comparées entre voiture et train.
+            </p>
+            <div class="bg-blue-900/30 p-4 rounded-lg my-4 border border-blue-700/50">
+              <h3 class="text-lg font-semibold text-blue-200 mb-2">💡 Lecture</h3>
+              <ul class="text-sm space-y-2 text-slate-300">
+                <li>Un A/R de 400 km évite ~140 kg CO₂ pour une personne seule</li>
+                <li>À plusieurs, le gain reste significatif</li>
+                <li>Ces ordres de grandeur matérialisent le bénéfice environnemental</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 5: Méthodologie -->
+  <section id="methodologie" class="py-20 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-6">
+      <Methodology />
+    </div>
+  </section>
+
+  <!-- Section 6: Conclusion -->
+  <section id="conclusion" class="py-20 bg-white">
+    <div class="max-w-5xl mx-auto px-6">
+      <Conclusion />
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-slate-900 text-slate-400 py-8">
+    <div class="max-w-7xl mx-auto px-6 text-center">
+      <p class="text-sm">
+        SAE 303 - Groupe 14 | Données : INSEE, SNCF Open Data, ADEME
+      </p>
+      <p class="text-xs mt-2">
+        © 2024 - Analyse du tourisme ferroviaire en France
+      </p>
+    </div>
+  </footer>
 </Layout>

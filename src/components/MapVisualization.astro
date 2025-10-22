@@ -1,0 +1,190 @@
+---
+---
+
+<div class="bg-white rounded-2xl shadow-xl p-6 border border-slate-200">
+  <div class="mb-4">
+    <h3 class="text-xl font-semibold text-slate-800 mb-2">Carte Tourisme × Train</h3>
+    <div class="flex gap-4 text-sm">
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-green-500"></div>
+        <span class="text-slate-600">Bien desservi</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-orange-400"></div>
+        <span class="text-slate-600">Opportunité</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-red-500"></div>
+        <span class="text-slate-600">Sous-desservi</span>
+      </div>
+    </div>
+  </div>
+  <div id="map-container"></div>
+</div>
+
+<script>
+  import * as d3 from 'd3';
+  import * as Plot from '@observablehq/plot';
+
+  async function loadData() {
+    const [deptsGeo, nuiteesDep, popDep, gares, freq] = await Promise.all([
+      fetch('/data/departements.geojson').then(r => r.json()),
+      fetch('/data/NUITEES_PAR_DEP.json').then(r => r.json()),
+      fetch('/data/popraw.json').then(r => r.json()),
+      fetch('/data/gares-de-voyageurs.json').then(r => r.json()),
+      fetch('/data/frequentation-gares.json').then(r => r.json())
+    ]);
+
+    return { deptsGeo, nuiteesDep, popDep, gares, freq };
+  }
+
+  function processData(data: any) {
+    const { deptsGeo, nuiteesDep, popDep, gares, freq } = data;
+
+    // Map nom -> code
+    const nomToCodeDep = new Map(
+      deptsGeo.features.map((f: any) => [
+        (f.properties.nom || f.properties.NOM).toLowerCase(),
+        String(f.properties.code || f.properties.CODE_DEPT)
+      ])
+    );
+
+    // Population
+    const popByDep = new Map(
+      popDep
+        .map((d: any) => [nomToCodeDep.get(d["Géographie"].toLowerCase()), +d["Valeur"]])
+        .filter(([code, val]: any) => code && !isNaN(val))
+    );
+
+    // Nuitées
+    const nuiteesByDep = d3.rollup(
+      nuiteesDep,
+      (v: any) => {
+        const total = d3.sum(v, (d: any) => 
+          (+d.hotel_nuitees || 0) + (+d.camping_nuitees || 0) + (+d.autres_nuitees || 0)
+        );
+        const code = String(v[0].code_departement);
+        const pop = popByDep.get(code) || 0;
+        return pop ? (total / pop) * 1000 : 0;
+      },
+      (d: any) => String(d.code_departement)
+    );
+
+    // IATR simplifié (pour l'exemple)
+    const deptFromCP = (cp: string) => {
+      const s = String(cp).padStart(5, '0');
+      if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+      if (s.startsWith('20')) return null;
+      return s.slice(0, 2);
+    };
+
+    const voy2024ByDep = d3.rollup(
+      freq,
+      (rows: any) => d3.sum(rows, (r: any) => +r.total_voyageurs_2024 || 0),
+      (r: any) => deptFromCP(String(r.code_postal))
+    );
+
+    const IATR = new Map();
+    const vals = [...voy2024ByDep.values()];
+    const min = d3.min(vals) || 0;
+    const max = d3.max(vals) || 1;
+    const q33 = d3.quantileSorted([...vals].sort(d3.ascending), 0.33);
+    const q66 = d3.quantileSorted([...vals].sort(d3.ascending), 0.66);
+
+    for (const [dep, val] of voy2024ByDep) {
+      if (dep) {
+        const normalized = ((val - min) / (max - min || 1)) * 100;
+        IATR.set(dep, normalized);
+      }
+    }
+
+    // Points gares
+    const deptFromINSEE = (insee: string) => {
+      if (!insee) return null;
+      const s = String(insee);
+      if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+      return s.slice(0, 2);
+    };
+
+    const pointsGares = gares
+      .map((g: any) => {
+        const insee = g.codeinsee ?? g.code_insee ?? g.code_insee_commune;
+        const dep = deptFromINSEE(insee);
+        if (!dep) return null;
+
+        const pos = g.position_geographique ?? g.position;
+        let lon = pos?.lon ?? g.longitude ?? (Array.isArray(g.geo_point_2d) ? g.geo_point_2d[1] : null);
+        let lat = pos?.lat ?? g.latitude ?? (Array.isArray(g.geo_point_2d) ? g.geo_point_2d[0] : null);
+
+        const iatr = IATR.get(dep) || 0;
+        const classe = iatr >= q66 ? '🟢 Bien desservi' : iatr >= q33 ? '🟠 Opportunité' : '🔴 Sous-desservi';
+
+        return {
+          dep,
+          name: g.nom ?? g.libelle ?? 'Gare',
+          lon: +lon,
+          lat: +lat,
+          iatr,
+          classe
+        };
+      })
+      .filter((d: any) => d && Number.isFinite(d.lon) && Number.isFinite(d.lat));
+
+    return { deptsGeo, nuiteesByDep, IATR, pointsGares, q33, q66 };
+  }
+
+  async function renderMap() {
+    const data = await loadData();
+    const processed = processData(data);
+    const { deptsGeo, nuiteesByDep, IATR, pointsGares, q33, q66 } = processed;
+
+    const classeIATR = (v: number) =>
+      v >= q66 ? '🟢 Bien desservi' : v >= q33 ? '🟠 Opportunité' : '🔴 Sous-desservi';
+
+    const iatrColor = d3.scaleOrdinal()
+      .domain(['🔴 Sous-desservi', '🟠 Opportunité', '🟢 Bien desservi'])
+      .range(['#ef4444', '#fb923c', '#10b981']);
+
+    const plot = Plot.plot({
+      width: 600,
+      height: 420,
+      projection: { type: 'mercator', domain: deptsGeo },
+      color: { label: 'Nuitées / 1000 hab', scheme: 'blues', legend: true },
+      marks: [
+        Plot.geo(deptsGeo, {
+          fill: (f: any) => {
+            const code = String(f.properties.code || f.properties.CODE_DEPT);
+            return nuiteesByDep.get(code) || 0;
+          },
+          stroke: '#334155',
+          strokeWidth: 0.5,
+          tip: true,
+          title: (f: any) => {
+            const code = String(f.properties.code || f.properties.CODE_DEPT);
+            const n = nuiteesByDep.get(code) || 0;
+            const i = IATR.get(code) || 0;
+            return `${f.properties.nom}\nNuitées/1000: ${n.toFixed(1)}\nIATR: ${i.toFixed(1)} (${classeIATR(i)})`;
+          }
+        }),
+        Plot.dot(pointsGares, {
+          x: 'lon',
+          y: 'lat',
+          r: (d: any) => 2 + d.iatr / 30,
+          fill: (d: any) => iatrColor(d.classe),
+          stroke: '#1e293b',
+          strokeWidth: 0.5,
+          opacity: 0.8,
+          title: (d: any) => `${d.name}\nIATR: ${d.iatr.toFixed(1)} (${d.classe})`
+        })
+      ]
+    });
+
+    const container = document.getElementById('map-container');
+    if (container) {
+      container.innerHTML = '';
+      container.appendChild(plot);
+    }
+  }
+
+  renderMap();
+</script>
