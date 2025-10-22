@@ -26,22 +26,76 @@
   import * as d3 from 'd3';
   import * as Plot from '@observablehq/plot';
 
+  // Fonctions utilitaires
+  function median(arr: number[]): number {
+    const sorted = [...arr].sort((a, b) => a - b);
+    const n = sorted.length;
+    return n ? (n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2) : 0;
+  }
+
+  function normalizeTo100(
+    mapIn: Map<string, number>,
+    allDeps: Set<string>,
+    options: { qLow?: number; qHigh?: number; transform?: (x: number) => number } = {}
+  ): Map<string, number> {
+    const { qLow = 0.05, qHigh = 0.95, transform = (x) => x } = options;
+
+    const tmp = new Map([...allDeps].map((k) => [k, mapIn.get(k)]));
+    const valsRaw = [...tmp.values()].filter((v): v is number => Number.isFinite(v));
+    const med = median(valsRaw.length ? valsRaw : [0]);
+    
+    for (const [k, v] of tmp) {
+      if (!Number.isFinite(v)) tmp.set(k, med);
+    }
+
+    const tv = [...tmp].map(([k, v]) => [k, transform(v!)] as [string, number]);
+    const onlyV = tv.map(([, v]) => v).sort((a, b) => a - b);
+    const lo = d3.quantileSorted(onlyV, qLow) ?? 0;
+    const hi = d3.quantileSorted(onlyV, qHigh) ?? 1;
+    const den = hi - lo || 1;
+
+    const out = new Map<string, number>();
+    for (const [k, v0] of tv) {
+      const v = Math.min(Math.max(v0, lo), hi);
+      out.set(k, ((v - lo) / den) * 100);
+    }
+    return out;
+  }
+
+  function deptFromINSEE(insee: string | null): string | null {
+    if (!insee) return null;
+    const s = String(insee);
+    if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+    if (s.startsWith('2A') || s.startsWith('2B')) return s.slice(0, 2);
+    return s.slice(0, 2);
+  }
+
+  function deptFromCP(cp: string | null): string | null {
+    if (!cp) return null;
+    const s = String(cp).padStart(5, '0');
+    if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
+    if (s.startsWith('20')) return null;
+    return s.slice(0, 2);
+  }
+
   async function loadData() {
-    const [deptsGeo, nuiteesDep, popDep, gares, freq] = await Promise.all([
+    const [deptsGeo, nuiteesDep, popDep, gares, freq, capHotels, capCamp, capAhct] = await Promise.all([
       fetch('/data/departements.geojson').then(r => r.json()),
       fetch('/data/NUITEES_PAR_DEP.json').then(r => r.json()),
       fetch('/data/popraw.json').then(r => r.json()),
       fetch('/data/gares-de-voyageurs.json').then(r => r.json()),
-      fetch('/data/frequentation-gares.json').then(r => r.json())
+      fetch('/data/frequentation-gares.json').then(r => r.json()),
+      fetch('/data/CAPACITES_HOTELS.json').then(r => r.json()),
+      fetch('/data/CAPACITES_CAMPINGS.json').then(r => r.json()),
+      fetch('/data/CAPACITES_AHCT.json').then(r => r.json())
     ]);
 
-    return { deptsGeo, nuiteesDep, popDep, gares, freq };
+    return { deptsGeo, nuiteesDep, popDep, gares, freq, capHotels, capCamp, capAhct };
   }
 
   function processData(data: any) {
-    const { deptsGeo, nuiteesDep, popDep, gares, freq } = data;
+    const { deptsGeo, nuiteesDep, popDep, gares, freq, capHotels, capCamp, capAhct } = data;
 
-    // Map nom -> code
     const nomToCodeDep = new Map(
       deptsGeo.features.map((f: any) => [
         (f.properties.nom || f.properties.NOM).toLowerCase(),
@@ -49,14 +103,12 @@
       ])
     );
 
-    // Population
     const popByDep = new Map(
       popDep
         .map((d: any) => [nomToCodeDep.get(d["Géographie"].toLowerCase()), +d["Valeur"]])
         .filter(([code, val]: any) => code && !isNaN(val))
     );
 
-    // Nuitées
     const nuiteesByDep = d3.rollup(
       nuiteesDep,
       (v: any) => {
@@ -70,13 +122,42 @@
       (d: any) => String(d.code_departement)
     );
 
-    // IATR simplifié (pour l'exemple)
-    const deptFromCP = (cp: string) => {
-      const s = String(cp).padStart(5, '0');
-      if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
-      if (s.startsWith('20')) return null;
-      return s.slice(0, 2);
-    };
+    const allDepCodes = new Set(
+      deptsGeo.features.map((f: any) =>
+        String(f.properties?.code ?? f.properties?.CODE_DEPT ?? f.properties?.INSEE_DEP ?? f.properties?.code_dep)
+      )
+    );
+
+    // Calcul km²
+    const km2ByDep = new Map(
+      deptsGeo.features.map((f: any) => {
+        const p = f.properties || {};
+        const code = String(p.code || p.CODE_DEPT || p.code_dep || p.INSEE_DEP);
+        const areaKm2 = (d3.geoArea(f) * 6371e3 * 6371e3) / 1e6;
+        return [code, areaKm2];
+      })
+    );
+
+    // Gares par département
+    const garesByDep = d3.group(
+      gares
+        .map((g: any) => {
+          const insee = g.codeinsee ?? g.code_insee ?? g.code_insee_commune ?? g.insee ?? g.code_commune_insee;
+          return { ...g, dep: deptFromINSEE(insee) };
+        })
+        .filter((g: any) => g.dep),
+      (g: any) => g.dep
+    );
+
+    const nbGaresByDep = new Map([...garesByDep].map(([dep, list]) => [dep, list.length]));
+
+    const gare_km2 = new Map(
+      [...km2ByDep].map(([code, km2]) => [code, km2 ? (nbGaresByDep.get(code) || 0) / km2 : 0])
+    );
+
+    const gares_100k = new Map(
+      [...popByDep].map(([code, pop]) => [code, pop ? ((nbGaresByDep.get(code) || 0) / pop) * 100000 : 0])
+    );
 
     const voy2024ByDep = d3.rollup(
       freq,
@@ -84,28 +165,69 @@
       (r: any) => deptFromCP(String(r.code_postal))
     );
 
-    const IATR = new Map();
-    const vals = [...voy2024ByDep.values()];
-    const min = d3.min(vals) || 0;
-    const max = d3.max(vals) || 1;
-    const q33 = d3.quantileSorted([...vals].sort(d3.ascending), 0.33);
-    const q66 = d3.quantileSorted([...vals].sort(d3.ascending), 0.66);
+    const rail_100k = new Map(
+      [...popByDep].map(([code, pop]) => [code, pop ? ((voy2024ByDep.get(code) || 0) / pop) * 100000 : 0])
+    );
 
-    for (const [dep, val] of voy2024ByDep) {
-      if (dep) {
-        const normalized = ((val - min) / (max - min || 1)) * 100;
-        IATR.set(dep, normalized);
-      }
-    }
+    // Couverture touristique
+    const cpsAvecGare = new Set(freq.map((r: any) => String(r.code_postal)));
+    
+    const capAll = [
+      ...(capHotels ?? []).map((d: any) => ({
+        cp: String(d.code_postal ?? d.cp ?? d.codePostal),
+        places: +(d.places_total ?? d.places ?? d.capacite ?? 0)
+      })),
+      ...(capCamp ?? []).map((d: any) => ({
+        cp: String(d.code_postal ?? d.cp ?? d.codePostal),
+        places: +(d.places_total ?? d.places ?? d.capacite ?? 0)
+      })),
+      ...(capAhct ?? []).map((d: any) => ({
+        cp: String(d.code_postal ?? d.cp ?? d.codePostal),
+        places: +(d.places_total ?? d.places ?? d.capacite ?? 0)
+      }))
+    ].filter((d) => d.cp && !Number.isNaN(d.places));
+
+    const coverageByDep = d3.rollup(
+      capAll,
+      (v: any) => {
+        const total = d3.sum(v, (d: any) => d.places);
+        const near = d3.sum(v.filter((d: any) => cpsAvecGare.has(d.cp)), (d: any) => d.places);
+        return total ? near / total : 0;
+      },
+      (d: any) => deptFromCP(d.cp)
+    );
+
+    // Normalisation des 4 composantes
+    const n_gare_km2 = normalizeTo100(gare_km2, allDepCodes);
+    const n_gares_100k = normalizeTo100(gares_100k, allDepCodes);
+    const n_rail_100k = normalizeTo100(rail_100k, allDepCodes);
+    const n_coverage = normalizeTo100(coverageByDep, allDepCodes);
+
+    // IATR brut
+    const IATR_raw = new Map(
+      [...allDepCodes].map((code) => {
+        const score =
+          0.25 * (n_gare_km2.get(code) || 0) +
+          0.25 * (n_gares_100k.get(code) || 0) +
+          0.30 * (n_rail_100k.get(code) || 0) +
+          0.20 * (n_coverage.get(code) || 0);
+        return [code, score];
+      })
+    );
+
+    // Recalibrage final
+    const vals = [...IATR_raw.values()];
+    const min = d3.min(vals) ?? 0;
+    const max = d3.max(vals) ?? 1;
+    const den = max - min || 1;
+
+    const IATR = new Map([...IATR_raw].map(([k, v]) => [k, ((v - min) / den) * 100]));
+
+    const iatrVals = [...IATR.values()].sort(d3.ascending);
+    const q33 = d3.quantileSorted(iatrVals, 0.33) ?? 33;
+    const q66 = d3.quantileSorted(iatrVals, 0.66) ?? 66;
 
     // Points gares
-    const deptFromINSEE = (insee: string) => {
-      if (!insee) return null;
-      const s = String(insee);
-      if (s.startsWith('97') || s.startsWith('98')) return s.slice(0, 3);
-      return s.slice(0, 2);
-    };
-
     const pointsGares = gares
       .map((g: any) => {
         const insee = g.codeinsee ?? g.code_insee ?? g.code_insee_commune;
@@ -135,8 +257,7 @@
 
   async function renderMap() {
     const data = await loadData();
-    const processed = processData(data);
-    const { deptsGeo, nuiteesByDep, IATR, pointsGares, q33, q66 } = processed;
+    const { deptsGeo, nuiteesByDep, IATR, pointsGares, q33, q66 } = processData(data);
 
     const classeIATR = (v: number) =>
       v >= q66 ? '🟢 Bien desservi' : v >= q33 ? '🟠 Opportunité' : '🔴 Sous-desservi';
